@@ -27,6 +27,7 @@ keyring = "3"
 thiserror = "1.0"
 tokio-cron-scheduler = "0.15.1"
 uuid = { version = "1.23.1", features = ["v4"] }
+walkdir = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"

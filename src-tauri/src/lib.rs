@@ -1,10 +1,11 @@
-mod system;
+pub mod system;
 
 use std::sync::Mutex;
 use system::{MetricsCollector, BootOptimizer, AISuggestionsEngine};
 use tauri::{State, Manager};
 use chrono::Timelike;
 use keyring::Entry;
+use walkdir::WalkDir;
 
 // Global state for metrics collector and AI engines
 struct AppState {
@@ -13,6 +14,7 @@ struct AppState {
     ai_engine: Mutex<AISuggestionsEngine>,
     focus_mode_manager: Mutex<system::FocusModeManager>,
     maintenance_scheduler: Mutex<system::MaintenanceScheduler>,
+    battery_manager: Mutex<system::BatteryManager>,
     deep_sleep: Mutex<system::DeepSleepManager>,
     hardware_health: Mutex<system::HardwareHealthCollector>,
     // Throttles system-modifying commands so rapid repeated calls cannot
@@ -272,6 +274,12 @@ fn get_optimization_details(
     // Validate optimization ID
     validate_optimization_id(&optimization_id)?;
 
+    let suggestions = ai_engine.generate_suggestions(
+        metrics.cpu.usage_percent as f64,
+        metrics.memory.usage_percent as f64,
+        metrics.disk.usage_percent as f64,
+        None,
+    );
     // Get details from boot optimizer
     let boot_optimizer = state.boot_optimizer.lock()
         .map_err(|e| format!("Failed to lock boot optimizer: {}", e))?;
@@ -417,11 +425,8 @@ fn rollback_optimization(
     let boot_optimizer = state.boot_optimizer.lock()
         .map_err(|e| format!("Failed to lock boot optimizer: {}", e))?;
 
-    // apply_optimization is reused here: rolling back a boot optimisation
-    // means re-applying the default (safe) state via the same dispatcher.
-    // A dedicated rollback_optimization method can be added to BootOptimizer
-    // when per-optimization undo logic is implemented.
-    boot_optimizer.apply_optimization(&optimization_id)
+    // Delegate rollback handling to BootOptimizer.
+    boot_optimizer.rollback_optimization(&optimization_id)
         .map_err(|e| format!("Rollback failed for '{}': {}", optimization_id, e))?;
 
     Ok(serde_json::json!({
@@ -480,22 +485,14 @@ fn clean_temp_files(
     let mut errors: Vec<String> = Vec::new();
 
     for dir in &dirs {
-        let read_dir = match std::fs::read_dir(dir) {
-            Ok(rd) => rd,
-            Err(e) => {
-                errors.push(format!("{}: {}", dir.display(), e));
-                continue;
-            }
-        };
-
-        for entry in read_dir.flatten() {
+        for entry in WalkDir::new(dir).into_iter().flatten() {
             let path = entry.path();
-            // Only remove regular files; leave sub-directories intact to avoid
-            // recursively deleting directories that may contain important data.
+
             let metadata = match path.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
+
             if !metadata.is_file() {
                 continue;
             }
@@ -516,11 +513,10 @@ if file_age < Duration::from_secs(24 * 60 * 60) {
             let file_size = metadata.len();
 
             if is_dry_run {
-                // Preview only: count without deleting.
                 files_removed += 1;
                 space_freed_bytes += file_size;
             } else {
-                match std::fs::remove_file(&path) {
+                match std::fs::remove_file(path) {
                     Ok(()) => {
                         files_removed += 1;
                         space_freed_bytes += file_size;
@@ -893,6 +889,30 @@ fn get_maintenance_logs(state: State<AppState>) -> Result<Vec<system::Maintenanc
     Ok(scheduler.get_logs())
 }
 
+// Battery Commands
+#[tauri::command]
+fn get_battery_status(state: State<AppState>) -> Result<system::BatteryStatus, String> {
+    let manager = state.battery_manager.lock()
+        .map_err(|e| format!("Failed to lock battery manager: {}", e))?;
+    manager.get_status()
+}
+
+#[tauri::command]
+fn set_charge_limit(state: State<AppState>, enable: bool) -> Result<String, String> {
+    let manager = state.battery_manager.lock()
+        .map_err(|e| format!("Failed to lock battery manager: {}", e))?;
+    manager.set_charge_limit(enable)?;
+    Ok("Charge limit updated successfully".to_string())
+}
+
+#[tauri::command]
+fn toggle_smart_override(state: State<AppState>, override_active: bool) -> Result<String, String> {
+    let manager = state.battery_manager.lock()
+        .map_err(|e| format!("Failed to lock battery manager: {}", e))?;
+    manager.toggle_smart_override(override_active)?;
+    Ok("Smart override updated successfully".to_string())
+}
+
 #[tauri::command]
 fn get_deep_sleep_status(state: State<AppState>) -> Result<system::DeepSleepStatus, String> {
     let ds = state.deep_sleep.lock()
@@ -932,6 +952,8 @@ fn freeze_process(
         .map_err(|e| format!("Failed to lock deep sleep manager: {}", e))?;
     ds.freeze_process(pid, name, memory_bytes)?;
     Ok(ds.get_status())
+}
+
 // Hardware Health Commands
 #[tauri::command]
 fn get_hardware_health(state: State<AppState>) -> Result<system::HardwareHealthData, String> {
@@ -964,6 +986,7 @@ pub fn run() {
             ai_engine: Mutex::new(AISuggestionsEngine::new()),
             focus_mode_manager: Mutex::new(system::FocusModeManager::new()),
             maintenance_scheduler: Mutex::new(system::MaintenanceScheduler::new()),
+            battery_manager: Mutex::new(system::BatteryManager::new()),
             deep_sleep: Mutex::new(system::DeepSleepManager::new(None)),
             hardware_health: Mutex::new(system::HardwareHealthCollector::new()),
             rate_limiter: Mutex::new(system::RateLimiter::new()),
@@ -1078,6 +1101,9 @@ pub fn run() {
             get_maintenance_config,
             update_maintenance_config,
             get_maintenance_logs,
+            get_battery_status,
+            set_charge_limit,
+            toggle_smart_override,
             get_deep_sleep_status,
             update_deep_sleep_config,
             thaw_process,

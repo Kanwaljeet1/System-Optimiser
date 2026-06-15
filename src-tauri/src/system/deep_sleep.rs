@@ -163,15 +163,42 @@ impl DeepSleepManager {
         };
 
         // Attempt to load existing config
-        if let Some(ref path) = config_path {
-            if path.exists() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    if let Ok(loaded) = serde_json::from_str::<DeepSleepConfig>(&content) {
-                        config = loaded;
+       if let Some(ref path) = config_path {
+        if path.exists() {
+            match std::fs::read_to_string(path) {
+                Ok(content) => {
+                    match serde_json::from_str::<DeepSleepConfig>(&content) {
+                        Ok(loaded) => {
+                            config = loaded;
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "Failed to parse Deep Sleep configuration '{}': {}",
+                                path.display(),
+                                err
+                            );
+
+                            let backup_path = path.with_extension("corrupted");
+                            let _ = std::fs::copy(path, &backup_path);
+
+                            eprintln!(
+                                "Corrupted configuration backed up to '{}'",
+                                backup_path.display()
+                            );
+                        }
                     }
                 }
             }
+            Err(err) => {
+                eprintln!(
+                    "Failed to read Deep Sleep configuration '{}': {}",
+                    path.display(),
+                    err
+                );
+            }
         }
+    }
+}
 
         Self {
             config,
@@ -188,12 +215,37 @@ impl DeepSleepManager {
         
         // Attempt to load existing config if it exists
         if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(loaded) = serde_json::from_str::<DeepSleepConfig>(&content) {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                     match serde_json::from_str::<DeepSleepConfig>(&content) {
+                Ok(loaded) => {
                     self.config = loaded;
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Failed to parse Deep Sleep configuration '{}': {}",
+                        path.display(),
+                        err
+                    );
+
+                    let backup_path = path.with_extension("corrupted");
+                    let _ = std::fs::copy(&path, &backup_path);
+
+                    eprintln!(
+                        "Corrupted configuration backed up to '{}'",
+                        backup_path.display()
+                    );
                 }
             }
         }
+        Err(err) => {
+            eprintln!(
+                "Failed to read Deep Sleep configuration '{}': {}",
+                path.display(),
+                err
+            );
+        }
+    }
         
         self.config_path = Some(path);
     }
@@ -220,11 +272,15 @@ impl DeepSleepManager {
         // Save to file
         if let Some(ref path) = self.config_path {
             if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create config directory: {}", e))?;
             }
-            if let Ok(content) = serde_json::to_string_pretty(&self.config) {
-                let _ = std::fs::write(path, content);
-            }
+
+            let content = serde_json::to_string_pretty(&self.config)
+                .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+            std::fs::write(path, content)
+                .map_err(|e| format!("Failed to save Deep Sleep configuration: {}", e))?;
         }
 
         Ok(())
