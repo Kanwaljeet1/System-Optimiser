@@ -169,15 +169,11 @@ fn get_optimization_suggestions() -> Result<Vec<serde_json::Value>, String> {
 
 #[tauri::command]
 fn get_optimization_details(
-    state: State<AppState>,
+    _state: State<AppState>,
     optimization_id: String,
 ) -> Result<serde_json::Value, String> {
     // Validate optimization ID
     validate_optimization_id(&optimization_id)?;
-
-    // Get details from boot optimizer
-    let boot_optimizer = state.boot_optimizer.lock()
-        .map_err(|e| format!("Failed to lock boot optimizer: {}", e))?;
 
     // Map optimization IDs to details
     let details = match optimization_id.as_str() {
@@ -269,7 +265,7 @@ fn get_optimization_details(
 
 #[tauri::command]
 fn get_optimization_details(
-    state: State<AppState>,
+    _state: State<AppState>,
     optimization_id: String,
 ) -> Result<serde_json::Value, String> {
     // Validate optimization ID
