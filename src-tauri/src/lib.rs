@@ -962,6 +962,10 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
+
+            let mut last_daily_run: Option<chrono::NaiveDate> = None;
+            let mut last_weekly_run: Option<chrono::NaiveDate> = None;
+
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(60));
@@ -975,11 +979,29 @@ pub fn run() {
                             system::get_idle_time_seconds() > 900 // 15 mins
                         } else if config.schedule == "daily" {
                             let now = chrono::Local::now();
-                            now.hour() == 2 && now.minute() == 0 // 2:00 AM
+                            let should_run =
+                                now.hour() >= 2 &&
+                                last_daily_run != Some(now.date_naive());
+
+                            if should_run {
+                                last_daily_run = Some(now.date_naive());
+                            }
+
+                            should_run
+
                         } else if config.schedule == "weekly" {
                             let now = chrono::Local::now();
                             use chrono::Datelike;
-                            now.weekday() == chrono::Weekday::Sun && now.hour() == 2 && now.minute() == 0 // Sun 2:00 AM
+                            let should_run =
+                                now.weekday() == chrono::Weekday::Sun &&
+                                now.hour() >= 2 &&
+                                last_weekly_run != Some(now.date_naive());
+
+                            if should_run {
+                                last_weekly_run = Some(now.date_naive());
+                         }
+
+                            should_run
                         } else {
                             false
                         }
