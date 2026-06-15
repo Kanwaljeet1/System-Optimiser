@@ -733,8 +733,16 @@ fn update_settings(
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialise settings: {}", e))?;
 
-    std::fs::write(&path, content)
-        .map_err(|e| format!("Failed to write settings file: {}", e))?;
+    // Create temporary file path
+let temp_path = path.with_extension("tmp");
+
+// Write to temp file first
+std::fs::write(&temp_path, content)
+    .map_err(|e| format!("Failed to write temporary settings file: {}", e))?;
+
+// Rename temp file to actual settings file
+std::fs::rename(&temp_path, &path)
+    .map_err(|e| format!("Failed to replace settings file atomically: {}", e))?;
 
     Ok(serde_json::json!({
         "success": true,
