@@ -495,7 +495,20 @@ fn clean_temp_files(
             if !metadata.is_file() {
                 continue;
             }
+            let modified = match metadata.modified() {
+    Ok(time) => time,
+    Err(_) => continue,
+};
 
+// Skip files newer than 24 hours
+let file_age = match SystemTime::now().duration_since(modified) {
+    Ok(age) => age,
+    Err(_) => continue,
+};
+
+if file_age < Duration::from_secs(24 * 60 * 60) {
+    continue;
+}
             let file_size = metadata.len();
 
             if is_dry_run {
