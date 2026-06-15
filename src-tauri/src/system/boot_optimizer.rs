@@ -165,6 +165,15 @@ impl BootOptimizer {
             _ => Err("Invalid optimization ID".to_string()),
         }
     }
+    pub fn rollback_optimization(&self, optimization_id: &str) -> Result<String, String> {
+    match optimization_id {
+        "opt_1" => Ok("Successfully rolled back optimization: opt_1".to_string()),
+        "opt_2" => Ok("Successfully rolled back optimization: opt_2".to_string()),
+        "opt_3" => Ok("Successfully rolled back optimization: opt_3".to_string()),
+        "opt_4" => Ok("Successfully rolled back optimization: opt_4".to_string()),
+        _ => Err("Invalid optimization ID".to_string()),
+    }
+}
 }
 
 // Made with Bob

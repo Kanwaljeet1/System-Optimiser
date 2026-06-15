@@ -24,8 +24,7 @@ pub struct FocusModeStatus {
 
 pub struct FocusModeManager {
     is_enabled: bool,
-    // Store (Pid, process_name) pairs to prevent resuming wrong process if PID is reused
-    paused_pids: HashSet<(Pid, String)>,
+    paused_pids: HashSet<Pid>,
     settings: FocusModeSettings,
 }
 
@@ -69,8 +68,18 @@ impl FocusModeManager {
     }
 
     pub fn toggle(&mut self, enable: bool) -> Result<String, String> {
+        // ✅ OS support check
+        // Only allow Focus Mode on Windows for now
+        #[cfg(not(target_os = "windows"))]
+        {
+            return Err("Focus Mode is not supported on this operating system".to_string());
+        }
+
         if self.is_enabled == enable {
-            return Ok(format!("Focus mode is already {}", if enable { "enabled" } else { "disabled" }));
+            return Ok(format!(
+                "Focus mode is already {}",
+                if enable { "enabled" } else { "disabled" }
+            ));
         }
 
         let mut sys = System::new_all();
@@ -84,56 +93,58 @@ impl FocusModeManager {
                 let name = process.name().to_string().to_lowercase();
 
                 // Check if process matches any blacklist entry
-                let is_blacklisted = self.settings.blacklist.iter().any(|b| name.eq_ignore_ascii_case(b));
-                let is_whitelisted = self.settings.whitelist.iter().any(|w| name.eq_ignore_ascii_case(w));
+                let is_blacklisted = self
+                    .settings
+                    .blacklist
+                    .iter()
+                    .any(|b| name.eq_ignore_ascii_case(b));
+                let is_whitelisted = self
+                    .settings
+                    .whitelist
+                    .iter()
+                    .any(|w| name.eq_ignore_ascii_case(w));
 
                 if is_blacklisted && !is_whitelisted {
                     // Try to pause the process using platform-specific method
                     if pause_process(*pid) {
-                        // Store both PID and process name to verify identity if PID is reused later
-                        self.paused_pids.insert((*pid, name.clone()));
+                        // Store PID of successfully paused process
+                        self.paused_pids.insert(*pid);
                         paused_count += 1;
                     }
                 }
             }
 
             self.is_enabled = true;
-            Ok(format!("Focus mode enabled. Paused {} background processes.", paused_count))
+            Ok(format!(
+                "Focus mode enabled. Paused {} background processes.",
+                paused_count
+            ))
         } else {
             // Disable Focus Mode: Resume all paused processes
             let mut resumed_count = 0;
 
-            for (pid, original_name) in &self.paused_pids {
-                if let Some(process) = sys.process(*pid) {
-                    // Verify process identity by checking name to prevent resuming wrong process
-                    // if PID was reused between enable and disable calls
-                    let current_name = process.name().to_string().to_lowercase();
-                    if current_name == *original_name {
-                        if resume_process(*pid) {
-                            resumed_count += 1;
-                        }
+            for pid in &self.paused_pids {
+                if sys.process(*pid).is_some() {
+                    if resume_process(*pid) {
+                        resumed_count += 1;
+                } else {
+                        failed_count += 1;
+                        stale_pids.push(*pid);
                     }
                 }
+                else {
+                        failed_count += 1;
+                        stale_pids.push(*pid);
+                   }
             }
 
             self.paused_pids.clear();
+
             self.is_enabled = false;
-            Ok(format!("Focus mode disabled. Resumed {} background processes.", resumed_count))
-        }
-    }
-}
-
-/// Platform-specific process pause implementation
-#[cfg(target_os = "windows")]
-fn pause_process(pid: Pid) -> bool {
-    use windows::Win32::System::Threading::PROCESS_SET_INFORMATION;
-
-    unsafe {
-        // OpenProcess requires PROCESS_SET_INFORMATION access to change priority
-        let handle = OpenProcess(PROCESS_SET_INFORMATION, false, pid.as_u32());
-
-        if handle == INVALID_HANDLE_VALUE {
-            return false;
+            Ok(format!(
+                "Focus mode disabled. Resumed {} background processes.",
+                resumed_count
+            ))
         }
 
         let result = SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS).is_ok();
