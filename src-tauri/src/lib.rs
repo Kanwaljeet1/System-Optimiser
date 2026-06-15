@@ -421,11 +421,8 @@ fn rollback_optimization(
     let boot_optimizer = state.boot_optimizer.lock()
         .map_err(|e| format!("Failed to lock boot optimizer: {}", e))?;
 
-    // apply_optimization is reused here: rolling back a boot optimisation
-    // means re-applying the default (safe) state via the same dispatcher.
-    // A dedicated rollback_optimization method can be added to BootOptimizer
-    // when per-optimization undo logic is implemented.
-    boot_optimizer.apply_optimization(&optimization_id)
+    // Delegate rollback handling to BootOptimizer.
+    boot_optimizer.rollback_optimization(&optimization_id)
         .map_err(|e| format!("Rollback failed for '{}': {}", optimization_id, e))?;
 
     Ok(serde_json::json!({
