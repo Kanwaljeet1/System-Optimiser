@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use system::{MetricsCollector, BootOptimizer, AISuggestionsEngine};
 use tauri::{State, Manager};
 use chrono::Timelike;
+use keyring::Entry;
 
 // Global state for metrics collector and AI engines
 struct AppState {
@@ -795,17 +796,16 @@ fn set_api_key(
     // directory. The config directory is created automatically on first write.
     // This is the same directory used by settings.json so the path is already
     // known to the OS and scoped to this application.
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Failed to resolve app config directory: {}", e))?;
+    
+    let entry = Entry::new(
+    "system-optimizer",
+    &format!("{}_api_key", provider),
+)
+.map_err(|e| format!("Failed to create credential entry: {}", e))?;
 
-    std::fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config directory: {}", e))?;
-
-    let key_file = config_dir.join(format!("{}_api_key.txt", provider));
-    std::fs::write(&key_file, &trimmed_key)
-        .map_err(|e| format!("Failed to save API key: {}", e))?;
+entry
+    .set_password(&trimmed_key)
+    .map_err(|e| format!("Failed to store API key securely: {}", e))?;
 
     Ok(serde_json::json!({
         "success": true,
