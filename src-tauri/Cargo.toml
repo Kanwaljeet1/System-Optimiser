@@ -23,6 +23,7 @@ sysinfo = "0.30"
 rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = "0.4"
 anyhow = "1.0"
+keyring = "3"
 thiserror = "1.0"
 tokio-cron-scheduler = "0.15.1"
 uuid = { version = "1.23.1", features = ["v4"] }
