@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use system::{MetricsCollector, BootOptimizer, AISuggestionsEngine};
 use tauri::{State, Manager};
 use chrono::Timelike;
+use walkdir::WalkDir;
 
 // Global state for metrics collector and AI engines
 struct AppState {
@@ -490,22 +491,14 @@ fn clean_temp_files(
     let mut errors: Vec<String> = Vec::new();
 
     for dir in &dirs {
-        let read_dir = match std::fs::read_dir(dir) {
-            Ok(rd) => rd,
-            Err(e) => {
-                errors.push(format!("{}: {}", dir.display(), e));
-                continue;
-            }
-        };
-
-        for entry in read_dir.flatten() {
+        for entry in WalkDir::new(dir).into_iter().flatten() {
             let path = entry.path();
-            // Only remove regular files; leave sub-directories intact to avoid
-            // recursively deleting directories that may contain important data.
+
             let metadata = match path.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
+
             if !metadata.is_file() {
                 continue;
             }
@@ -513,11 +506,10 @@ fn clean_temp_files(
             let file_size = metadata.len();
 
             if is_dry_run {
-                // Preview only: count without deleting.
                 files_removed += 1;
                 space_freed_bytes += file_size;
             } else {
-                match std::fs::remove_file(&path) {
+                match std::fs::remove_file(path) {
                     Ok(()) => {
                         files_removed += 1;
                         space_freed_bytes += file_size;
