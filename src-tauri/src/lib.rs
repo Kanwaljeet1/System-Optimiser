@@ -1062,8 +1062,12 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_millis(1500));
                     if let Some(state) = ds_handle.try_state::<AppState>() {
                         if let Ok(mut ds) = state.deep_sleep.lock() {
-                            ds.tick();
-                        }
+    ds.refresh_system();
+}
+
+if let Ok(mut ds) = state.deep_sleep.lock() {
+    ds.tick();
+}
                     }
                 }
             });
