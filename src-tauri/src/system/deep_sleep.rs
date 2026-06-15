@@ -272,11 +272,15 @@ impl DeepSleepManager {
         // Save to file
         if let Some(ref path) = self.config_path {
             if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create config directory: {}", e))?;
             }
-            if let Ok(content) = serde_json::to_string_pretty(&self.config) {
-                let _ = std::fs::write(path, content);
-            }
+
+            let content = serde_json::to_string_pretty(&self.config)
+                .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+            std::fs::write(path, content)
+                .map_err(|e| format!("Failed to save Deep Sleep configuration: {}", e))?;
         }
 
         Ok(())
