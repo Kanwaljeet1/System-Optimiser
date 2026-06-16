@@ -676,7 +676,29 @@ fn apply_boot_optimization(
         "requires_restart": false,
     }))
 }
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Serialize, Deserialize)]
+struct GeneralSettings {
+    auto_start: bool,
+    minimize_to_tray: bool,
+    check_updates: bool,
+}
 
+#[derive(Debug, Serialize, Deserialize)]
+struct MonitoringSettings {
+    update_interval_ms: u64,
+    enable_notifications: bool,
+    notification_threshold: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Settings {
+    general: serde_json::Value,
+    monitoring: serde_json::Value,
+    ai: serde_json::Value,
+    privacy: serde_json::Value,
+    optimization: serde_json::Value,
+}
 /// Returns the hardcoded defaults used when no saved settings file exists.
 fn default_settings() -> serde_json::Value {
     serde_json::json!({
@@ -747,8 +769,12 @@ fn update_settings(
             .map_err(|e| format!("Failed to create config directory: {}", e))?;
     }
 
-    let content = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialise settings: {}", e))?;
+    let validated: Settings =
+    serde_json::from_value(settings.clone())
+        .map_err(|e| format!("Invalid settings payload: {}", e))?;
+
+let content = serde_json::to_string_pretty(&validated)
+    .map_err(|e| format!("Failed to serialise settings: {}", e))?;
 
     // Create temporary file path
 let temp_path = path.with_extension("tmp");
