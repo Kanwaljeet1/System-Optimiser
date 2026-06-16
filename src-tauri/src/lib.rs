@@ -751,8 +751,17 @@ fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read settings file: {}", e))?;
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Settings file is corrupt or unreadable: {}", e))
+    match serde_json::from_str(&content) {
+    Ok(settings) => Ok(settings),
+    Err(e) => {
+        eprintln!("Corrupted settings file detected: {}", e);
+         let backup = path.with_extension("corrupted");
+
+    let _ = std::fs::copy(&path, &backup);
+
+        Ok(default_settings())
+    }
+}
 }
 
 #[tauri::command]
