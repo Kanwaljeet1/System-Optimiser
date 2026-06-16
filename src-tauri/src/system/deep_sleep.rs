@@ -54,9 +54,6 @@ mod windows_suspend {
             }
         }
     }
-    pub fn refresh_processes(&mut self) {
-    self.sys.refresh_processes();
-    }
 
     pub fn resume_process(pid: u32) -> Result<(), String> {
         unsafe {
@@ -158,16 +155,7 @@ impl DeepSleepManager {
         ];
 
         let config_path = app_config_dir.map(|d| d.join("deep_sleep_config.json"));
-        
-        let mut config = DeepSleepConfig {
-            enabled: false,
-            inactivity_timeout_secs: 1800, // 30 minutes default
-            whitelist: default_whitelist.clone(),
-        };
-        fn is_process_active(&self, process: &sysinfo::Process) -> bool {
-    // Skip suspension for processes actively using CPU
-    process.cpu_usage() > 2.0
-}
+
 
         // Attempt to load existing config
        if let Some(ref path) = config_path {
@@ -295,6 +283,9 @@ impl DeepSleepManager {
 
     pub fn refresh_system(&mut self) {
     self.sys.refresh_processes();
+}
+    fn is_process_active(&self, process: &sysinfo::Process) -> bool {
+    process.cpu_usage() > 2.0
 }
     /// Primary background loop execution tick
     pub fn tick(&mut self) {
