@@ -142,9 +142,12 @@ fn get_boot_time() -> Result<serde_json::Value, String> {
         // average / best / worst require persisted history which is not yet
         // implemented; initialise them to the current uptime so the UI receives
         // real data rather than hardcoded constants.
-        "average_boot_time_ms": uptime_ms,
-        "best_boot_time_ms": uptime_ms,
-        "worst_boot_time_ms": uptime_ms,
+        
+        "average_boot_time_ms": serde_json::Value::Null,
+"best_boot_time_ms": serde_json::Value::Null,
+"worst_boot_time_ms": serde_json::Value::Null,
+
+"historical_metrics_available": false,
         "boot_history": []
     }))
 }
