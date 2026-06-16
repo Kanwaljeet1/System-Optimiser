@@ -1032,8 +1032,13 @@ pub fn run() {
                     let state = handle.state::<AppState>();
                     
                     let run_now = {
-                        let config = state.maintenance_scheduler.lock().unwrap().get_config();
-                        if !config.enabled {
+let config = match state.maintenance_scheduler.lock() {
+    Ok(scheduler) => scheduler.get_config(),
+    Err(e) => {
+        eprintln!("Failed to lock maintenance scheduler: {}", e);
+        continue;
+    }
+};                        if !config.enabled {
                             false
                         } else if config.schedule == "idle" {
                             system::get_idle_time_seconds() > 900 // 15 mins
@@ -1068,8 +1073,13 @@ pub fn run() {
                     };
 
                     if run_now {
-                        state.maintenance_scheduler.lock().unwrap().execute_maintenance();
-                        // Sleep extra to prevent multiple runs in the same idle period or minute
+                        match state.maintenance_scheduler.lock() {
+    Ok(scheduler) => scheduler.execute_maintenance(),
+    Err(e) => {
+        eprintln!("Failed to lock maintenance scheduler: {}", e);
+        continue;
+    }
+}/ Sleep extra to prevent multiple runs in the same idle period or minute
                         std::thread::sleep(std::time::Duration::from_secs(3600)); 
                     }
                 }
