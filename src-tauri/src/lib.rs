@@ -1066,8 +1066,8 @@ pub fn run() {
     ds.refresh_system();
 }
 
-if let Ok(mut ds) = state.deep_sleep.lock() {
-    ds.tick();
+if let Ok(mut ds) = state.deep_sleep.try_lock() {
+    ds.refresh_processes();
 }
                     }
                 }
