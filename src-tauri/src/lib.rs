@@ -484,6 +484,7 @@ fn clean_temp_files(
     let mut files_removed: u64 = 0;
     let mut space_freed_bytes: u64 = 0;
     let mut errors: Vec<String> = Vec::new();
+    let mut candidates: Vec<(std::path::PathBuf, u64)> = Vec::new();
 
     for dir in &dirs {
         for entry in WalkDir::new(dir).into_iter().flatten() {
@@ -513,22 +514,30 @@ if file_age < Duration::from_secs(24 * 60 * 60) {
 }
             let file_size = metadata.len();
 
-            if is_dry_run {
-                files_removed += 1;
-                space_freed_bytes += file_size;
-            } else {
-                match std::fs::remove_file(path) {
-                    Ok(()) => {
-                        files_removed += 1;
-                        space_freed_bytes += file_size;
-                    }
-                    Err(e) => {
-                        errors.push(format!("{}: {}", path.display(), e));
-                    }
-                }
-            }
+            candidates.push((
+    path.to_path_buf(),
+    file_size,
+));
         }
     }
+    for (_, size) in &candidates {
+    files_removed += 1;
+    space_freed_bytes += *size;
+}
+if !is_dry_run {
+    for (path, _) in &candidates {
+        if let Err(e) = std::fs::remove_file(path) {
+            errors.push(format!("{}: {}", path.display(), e));
+        }
+    }
+}
+Ok(serde_json::json!({
+    "success": true,
+    "dry_run": is_dry_run,
+    "space_freed_bytes": space_freed_bytes,
+    "files_removed": files_removed,
+    "errors": errors
+}))
 
     Ok(serde_json::json!({
         "success": true,
