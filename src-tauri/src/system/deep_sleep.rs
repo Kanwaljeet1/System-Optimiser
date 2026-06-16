@@ -54,6 +54,9 @@ mod windows_suspend {
             }
         }
     }
+    pub fn refresh_processes(&mut self) {
+    self.sys.refresh_processes();
+    }
 
     pub fn resume_process(pid: u32) -> Result<(), String> {
         unsafe {
@@ -161,6 +164,10 @@ impl DeepSleepManager {
             inactivity_timeout_secs: 1800, // 30 minutes default
             whitelist: default_whitelist.clone(),
         };
+        fn is_process_active(&self, process: &sysinfo::Process) -> bool {
+    // Skip suspension for processes actively using CPU
+    process.cpu_usage() > 2.0
+}
 
         // Attempt to load existing config
        if let Some(ref path) = config_path {
@@ -354,10 +361,14 @@ impl DeepSleepManager {
                 "docker", "teams", "safari", "excel", "word", "powerpoint", "steam"
             ];
             let is_known_heavy = common_heavy_names.iter().any(|&n| name_lower.contains(n));
+            // Avoid suspending applications that are actively performing work
+            // in the background such as downloads, uploads, rendering,
+            // synchronization, or container workloads.
+            let is_active = self.is_process_active(process);
 
-            if is_heavy_app || is_known_heavy {
-                candidates.push((pid_u32, name, process.memory()));
-            }
+if (is_heavy_app || is_known_heavy) && !is_active {
+    candidates.push((pid_u32, name, process.memory()));
+}
         }
 
         // 5. Suspend candidates exceeding timeout
