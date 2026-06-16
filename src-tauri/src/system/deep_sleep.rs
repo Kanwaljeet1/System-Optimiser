@@ -286,6 +286,9 @@ impl DeepSleepManager {
         Ok(())
     }
 
+    pub fn refresh_system(&mut self) {
+    self.sys.refresh_processes();
+}
     /// Primary background loop execution tick
     pub fn tick(&mut self) {
         if !self.config.enabled {

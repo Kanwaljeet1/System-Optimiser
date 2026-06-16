@@ -6,6 +6,7 @@ use tauri::{State, Manager};
 use chrono::Timelike;
 use keyring::Entry;
 use walkdir::WalkDir;
+use serde::{Serialize, Deserialize};
 
 // Global state for metrics collector and AI engines
 struct AppState {
@@ -1005,7 +1006,7 @@ pub fn run() {
 
             let mut last_daily_run: Option<chrono::NaiveDate> = None;
             let mut last_weekly_run: Option<chrono::NaiveDate> = None;
-
+           
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(60));
@@ -1062,8 +1063,12 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_millis(1500));
                     if let Some(state) = ds_handle.try_state::<AppState>() {
                         if let Ok(mut ds) = state.deep_sleep.lock() {
-                            ds.tick();
-                        }
+    ds.refresh_system();
+}
+
+if let Ok(mut ds) = state.deep_sleep.lock() {
+    ds.tick();
+}
                     }
                 }
             });
