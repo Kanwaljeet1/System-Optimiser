@@ -34,6 +34,18 @@ pub struct NetworkMetrics {
     pub packets_received: u64,
 }
 
+pub fn collect_process_snapshot(&mut self) -> Vec<ProcessInfo> {
+    self.system.refresh_processes();
+
+    self.system
+        .processes()
+        .iter()
+        .map(|(_, process)| ProcessInfo {
+            ...
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemMetrics {
     pub cpu: CpuMetrics,

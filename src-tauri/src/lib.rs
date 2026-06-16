@@ -91,6 +91,7 @@ fn validate_optimization_id(optimization_id: &str) -> Result<(), String> {
 fn get_system_metrics(state: State<AppState>) -> Result<system::SystemMetrics, String> {
     let mut collector = state.metrics_collector.lock()
         .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
+
     Ok(collector.get_metrics())
 }
 
@@ -100,11 +101,35 @@ fn get_process_list(
     sort_by: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<system::ProcessInfo>, String> {
+    let mut processes = {
     let mut collector = state.metrics_collector.lock()
         .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
-    Ok(collector.get_process_list(sort_by.as_deref(), limit))
-}
 
+    collector.collect_process_snapshot()
+};
+
+if let Some(sort) = sort_by {
+    match sort.as_str() {
+        "cpu" => {
+            processes.sort_by(|a, b|
+                b.cpu_usage
+                    .partial_cmp(&a.cpu_usage)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            );
+        }
+        "memory" => {
+            processes.sort_by(|a, b|
+                b.memory_usage.cmp(&a.memory_usage)
+            );
+        }
+        _ => {}
+    }
+}
+if let Some(limit) = limit {
+    processes.truncate(limit);
+}
+Ok(processes)
+}
 #[tauri::command]
 fn kill_process(
     state: State<AppState>,
@@ -181,112 +206,6 @@ fn get_optimization_details(
 ) -> Result<serde_json::Value, String> {
     // Validate optimization ID
     validate_optimization_id(&optimization_id)?;
-
-    // Map optimization IDs to details
-    let details = match optimization_id.as_str() {
-        "opt_1" => serde_json::json!({
-            "id": "opt_1",
-            "title": "Disable Microsoft Teams auto-start",
-            "description": "Remove Microsoft Teams from Windows startup programs. Teams can be manually launched when needed.",
-            "category": "startup",
-            "risk_level": "safe",
-            "estimated_time_to_apply_sec": 5,
-            "potential_impacts": [
-                "Microsoft Teams will no longer start automatically at boot",
-                "Teams can still be launched manually from Start menu",
-                "Reduces boot time by approximately 8 seconds"
-            ],
-            "affected_programs": ["Microsoft Teams"],
-            "rollback_available": true,
-            "rollback_time_sec": 5,
-            "requires_restart": false,
-            "requires_admin": true,
-            "data_loss_risk": false,
-            "ai_confidence": 0.95
-        }),
-        "opt_2" => serde_json::json!({
-            "id": "opt_2",
-            "title": "Disable Adobe Creative Cloud auto-start",
-            "description": "Remove Adobe Creative Cloud from Windows startup. Disable auto-start service that loads in background.",
-            "category": "startup",
-            "risk_level": "safe",
-            "estimated_time_to_apply_sec": 5,
-            "potential_impacts": [
-                "Adobe applications will not auto-start",
-                "Manual launch still available",
-                "Reduces boot time by approximately 5 seconds"
-            ],
-            "affected_programs": ["Adobe Creative Cloud"],
-            "rollback_available": true,
-            "rollback_time_sec": 5,
-            "requires_restart": false,
-            "requires_admin": true,
-            "data_loss_risk": false,
-            "ai_confidence": 0.92
-        }),
-        "opt_3" => serde_json::json!({
-            "id": "opt_3",
-            "title": "Set Windows Search to delayed start",
-            "description": "Change Windows Search service from automatic to delayed start. Service will start 2 minutes after boot.",
-            "category": "service",
-            "risk_level": "safe",
-            "estimated_time_to_apply_sec": 10,
-            "potential_impacts": [
-                "File search will be unavailable for ~2 minutes after boot",
-                "Improves initial boot responsiveness",
-                "Reduces boot time by approximately 4 seconds"
-            ],
-            "affected_programs": ["Windows Search"],
-            "rollback_available": true,
-            "rollback_time_sec": 10,
-            "requires_restart": false,
-            "requires_admin": true,
-            "data_loss_risk": false,
-            "ai_confidence": 0.88
-        }),
-        "opt_4" => serde_json::json!({
-            "id": "opt_4",
-            "title": "Disable Dropbox auto-start",
-            "description": "Remove Dropbox from Windows startup programs. Dropbox can be manually launched when needed for sync.",
-            "category": "startup",
-            "risk_level": "safe",
-            "estimated_time_to_apply_sec": 5,
-            "potential_impacts": [
-                "Dropbox will not start automatically",
-                "File synchronization will start only when manually launched",
-                "Reduces boot time by approximately 3 seconds"
-            ],
-            "affected_programs": ["Dropbox"],
-            "rollback_available": true,
-            "rollback_time_sec": 5,
-            "requires_restart": false,
-            "requires_admin": true,
-            "data_loss_risk": false,
-            "ai_confidence": 0.85
-        }),
-        _ => return Err(format!("Unknown optimization ID: {}", optimization_id))
-    };
-
-    Ok(details)
-}
-
-#[tauri::command]
-fn get_optimization_details(
-    _state: State<AppState>,
-    optimization_id: String,
-) -> Result<serde_json::Value, String> {
-    // Validate optimization ID
-    validate_optimization_id(&optimization_id)?;
-
-    let suggestions = ai_engine.generate_suggestions(
-        metrics.cpu.usage_percent as f64,
-        metrics.memory.usage_percent as f64,
-        metrics.disk.usage_percent as f64,
-        None,
-    );
-    // Get details from boot optimizer
-    let boot_optimizer = state.boot_optimizer.lock()
-        .map_err(|e| format!("Failed to lock boot optimizer: {}", e))?;
 
     // Map optimization IDs to details
     let details = match optimization_id.as_str() {
@@ -581,9 +500,12 @@ fn get_ai_recommendations(
     // (which can take several hundred milliseconds) blocks every concurrent
     // AI command for the duration of the refresh.
     let metrics = {
-        let mut collector = state.metrics_collector.lock()
-            .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
-        collector.get_metrics()
+        let mut processes = {
+    let mut collector = state.metrics_collector.lock()
+        .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
+
+    collector.collect_process_snapshot()
+};
     };
 
     let ai_engine = state.ai_engine.lock()
@@ -617,8 +539,9 @@ fn get_ai_insights(state: State<AppState>) -> Result<Vec<system::AIInsight>, Str
     // metrics_collector only, then acquire ai_engine for the computation step.
     let metrics = {
         let mut collector = state.metrics_collector.lock()
-            .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
-        collector.get_metrics()
+        .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
+    collector.get_metrics()
+};
     };
 
     let ai_engine = state.ai_engine.lock()
@@ -1114,7 +1037,8 @@ let config = match state.maintenance_scheduler.lock() {
         eprintln!("Failed to lock maintenance scheduler: {}", e);
         continue;
     }
-}/ Sleep extra to prevent multiple runs in the same idle period or minute
+}
+// Sleep extra to prevent multiple runs in the same idle period or minute
                         std::thread::sleep(std::time::Duration::from_secs(3600)); 
                     }
                 }
@@ -1126,8 +1050,13 @@ let config = match state.maintenance_scheduler.lock() {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(1500));
                     if let Some(state) = ds_handle.try_state::<AppState>() {
-                        if let Ok(mut ds) = state.deep_sleep.lock() {
-    ds.refresh_system();
+                       if let Ok(mut ds) = state.deep_sleep.lock() {
+    ds.collect_process_snapshot();
+}
+
+if let Ok(mut ds) = state.deep_sleep.try_lock() {
+    ds.tick();
+}
 }
 
 if let Ok(mut ds) = state.deep_sleep.try_lock() {
