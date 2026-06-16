@@ -4,6 +4,7 @@ use std::process::Command;
 use chrono::Utc;
 use uuid::Uuid;
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaintenanceConfig {
@@ -42,10 +43,17 @@ pub struct MaintenanceLog {
 // Without a cap every invocation appends one entry and the Vec grows without
 // bound, leaking heap memory proportional to the number of maintenance cycles.
 const MAX_LOG_ENTRIES: usize = 100;
+const LAST_RUN_FILE: &str = "maintenance_last_run.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LastRunData {
+    last_run_timestamp: u64,
+}
 
 pub struct MaintenanceScheduler {
     pub config: Arc<Mutex<MaintenanceConfig>>,
     pub logs: Arc<Mutex<Vec<MaintenanceLog>>>,
+    pub last_run_timestamp: Arc<Mutex<Option<u64>>>,
 }
 
 impl MaintenanceScheduler {
@@ -53,6 +61,7 @@ impl MaintenanceScheduler {
         Self {
             config: Arc::new(Mutex::new(MaintenanceConfig::default())),
             logs: Arc::new(Mutex::new(Vec::new())),
+            last_run_timestamp: Arc::new(Mutex::new(load_last_run_timestamp())),
         }
     }
 
@@ -173,6 +182,15 @@ impl MaintenanceScheduler {
                 logs.drain(0..overflow);
             }
         }
+        let timestamp = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap()
+    .as_secs();
+
+*self.last_run_timestamp.lock().unwrap() =
+    Some(timestamp);
+
+save_last_run_timestamp(timestamp);
     }
 }
 
@@ -238,6 +256,25 @@ fn get_idle_time_windows() -> u64 {
             let idle_ms = current_tick - last_input_tick;
             return idle_ms / 1000; // Convert to seconds
         }
+
     }
     0
+}
+fn load_last_run_timestamp() -> Option<u64> {
+    let content = std::fs::read_to_string(LAST_RUN_FILE).ok()?;
+
+    let data: LastRunData =
+        serde_json::from_str(&content).ok()?;
+
+    Some(data.last_run_timestamp)
+}
+
+fn save_last_run_timestamp(timestamp: u64) {
+    let data = LastRunData {
+        last_run_timestamp: timestamp,
+    };
+
+    if let Ok(content) = serde_json::to_string_pretty(&data) {
+        let _ = std::fs::write(LAST_RUN_FILE, content);
+    }
 }
