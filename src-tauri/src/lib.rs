@@ -653,7 +653,14 @@ fn get_boot_optimization_actions(state: State<AppState>) -> Result<Vec<system::B
 fn apply_boot_optimization(
     state: State<AppState>,
     optimization_id: String,
+    confirm: bool,
 ) -> Result<serde_json::Value, String> {
+    if !confirm {
+    return Err(format!(
+        "Confirmation required to apply boot optimization. \
+         Review the optimization details first and then retry with confirm=true."
+    ));
+}
     enforce_rate_limit(&state, "apply_boot_optimization", OPTIMIZATION_LIMIT)?;
 
     validate_optimization_id(&optimization_id)?;
