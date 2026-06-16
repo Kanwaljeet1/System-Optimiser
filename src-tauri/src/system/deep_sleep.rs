@@ -345,9 +345,9 @@ impl DeepSleepManager {
 
             // Check whitelist
             let is_whitelisted = self.config.whitelist.iter().any(|w| {
-                let w_lower = w.to_lowercase();
-                name_lower == w_lower || name_lower.contains(&w_lower)
-            });
+    let w_lower = w.to_lowercase();
+    name_lower == w_lower
+});
             if is_whitelisted {
                 continue;
             }
