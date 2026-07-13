@@ -75,76 +75,86 @@ impl FocusModeManager {
             return Err("Focus Mode is not supported on this operating system".to_string());
         }
 
-        if self.is_enabled == enable {
-            return Ok(format!(
-                "Focus mode is already {}",
-                if enable { "enabled" } else { "disabled" }
-            ));
+        #[cfg(target_os = "windows")]
+        {
+            if self.is_enabled == enable {
+                return Ok(format!(
+                    "Focus mode is already {}",
+                    if enable { "enabled" } else { "disabled" }
+                ));
+            }
+
+            let mut sys = System::new_all();
+            sys.refresh_processes();
+
+            if enable {
+                // Enable Focus Mode: Suspend blacklisted processes
+                let mut paused_count = 0;
+
+                for (pid, process) in sys.processes() {
+                    let name = process.name().to_string().to_lowercase();
+
+                    // Check if process matches any blacklist entry
+                    let is_blacklisted = self
+                        .settings
+                        .blacklist
+                        .iter()
+                        .any(|b| name.eq_ignore_ascii_case(b));
+                    let is_whitelisted = self
+                        .settings
+                        .whitelist
+                        .iter()
+                        .any(|w| name.eq_ignore_ascii_case(w));
+
+                    if is_blacklisted && !is_whitelisted {
+                        // Try to pause the process using platform-specific method
+                        if pause_process(*pid) {
+                            // Store PID of successfully paused process
+                            self.paused_pids.insert(*pid);
+                            paused_count += 1;
+                        }
+                    }
+                }
+
+                self.is_enabled = true;
+                Ok(format!(
+                    "Focus mode enabled. Paused {} background processes.",
+                    paused_count
+                ))
+            } else {
+                // Disable Focus Mode: Resume all paused processes
+                let mut resumed_count = 0;
+
+                for pid in &self.paused_pids {
+                    if sys.process(*pid).is_some() {
+                        if resume_process(*pid) {
+                            resumed_count += 1;
+                        }
+                    }
+                }
+
+                self.paused_pids.clear();
+
+                self.is_enabled = false;
+                Ok(format!(
+                    "Focus mode disabled. Resumed {} background processes.",
+                    resumed_count
+                ))
+            }
         }
+    }
+}
 
-        let mut sys = System::new_all();
-        sys.refresh_processes();
+/// Platform-specific process pause implementation
+#[cfg(target_os = "windows")]
+fn pause_process(pid: Pid) -> bool {
+    use windows::Win32::System::Threading::PROCESS_SET_INFORMATION;
 
-        if enable {
-            // Enable Focus Mode: Suspend blacklisted processes
-            let mut paused_count = 0;
+    unsafe {
+        let handle = OpenProcess(PROCESS_SET_INFORMATION, false, pid.as_u32());
 
-            for (pid, process) in sys.processes() {
-                let name = process.name().to_string().to_lowercase();
-
-                // Check if process matches any blacklist entry
-                let is_blacklisted = self
-                    .settings
-                    .blacklist
-                    .iter()
-                    .any(|b| name.eq_ignore_ascii_case(b));
-                let is_whitelisted = self
-                    .settings
-                    .whitelist
-                    .iter()
-                    .any(|w| name.eq_ignore_ascii_case(w));
-
-                if is_blacklisted && !is_whitelisted {
-                    // Try to pause the process using platform-specific method
-                    if pause_process(*pid) {
-                        // Store PID of successfully paused process
-                        self.paused_pids.insert(*pid);
-                        paused_count += 1;
-                    }
-                }
-            }
-
-            self.is_enabled = true;
-            Ok(format!(
-                "Focus mode enabled. Paused {} background processes.",
-                paused_count
-            ))
-        } else {
-            // Disable Focus Mode: Resume all paused processes
-            let mut resumed_count = 0;
-
-            for pid in &self.paused_pids {
-                if sys.process(*pid).is_some() {
-                    if resume_process(*pid) {
-                        resumed_count += 1;
-                } else {
-                        failed_count += 1;
-                        stale_pids.push(*pid);
-                    }
-                }
-                else {
-                        failed_count += 1;
-                        stale_pids.push(*pid);
-                   }
-            }
-
-            self.paused_pids.clear();
-
-            self.is_enabled = false;
-            Ok(format!(
-                "Focus mode disabled. Resumed {} background processes.",
-                resumed_count
-            ))
+        if handle == INVALID_HANDLE_VALUE {
+            return false;
         }
 
         let result = SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS).is_ok();

@@ -1,6 +1,7 @@
 pub mod system;
 
 use std::sync::Mutex;
+use std::time::{SystemTime, Duration};
 use system::{MetricsCollector, BootOptimizer, AISuggestionsEngine};
 use tauri::{State, Manager};
 use chrono::Timelike;
@@ -23,7 +24,6 @@ struct AppState {
     rate_limiter: Mutex<system::RateLimiter>,
 }
 
-use std::time::Duration;
 
 // Rate limits for system-modifying commands, expressed as (max_calls, window).
 // kill_process is permitted at most once per second; the optimization commands
@@ -101,34 +101,11 @@ fn get_process_list(
     sort_by: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<system::ProcessInfo>, String> {
-    let mut processes = {
     let mut collector = state.metrics_collector.lock()
         .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
 
-    collector.collect_process_snapshot()
-};
-
-if let Some(sort) = sort_by {
-    match sort.as_str() {
-        "cpu" => {
-            processes.sort_by(|a, b|
-                b.cpu_usage
-                    .partial_cmp(&a.cpu_usage)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            );
-        }
-        "memory" => {
-            processes.sort_by(|a, b|
-                b.memory_usage.cmp(&a.memory_usage)
-            );
-        }
-        _ => {}
-    }
-}
-if let Some(limit) = limit {
-    processes.truncate(limit);
-}
-Ok(processes)
+    let sort_by_ref = sort_by.as_deref();
+    Ok(collector.get_process_list(sort_by_ref, limit))
 }
 #[tauri::command]
 fn kill_process(
@@ -453,14 +430,6 @@ if !is_dry_run {
         }
     }
 }
-Ok(serde_json::json!({
-    "success": true,
-    "dry_run": is_dry_run,
-    "space_freed_bytes": space_freed_bytes,
-    "files_removed": files_removed,
-    "errors": errors
-}))
-
     Ok(serde_json::json!({
         "success": true,
         "dry_run": is_dry_run,
@@ -500,12 +469,9 @@ fn get_ai_recommendations(
     // (which can take several hundred milliseconds) blocks every concurrent
     // AI command for the duration of the refresh.
     let metrics = {
-        let mut processes = {
-    let mut collector = state.metrics_collector.lock()
-        .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
-
-    collector.collect_process_snapshot()
-};
+        let mut collector = state.metrics_collector.lock()
+            .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
+        collector.get_metrics()
     };
 
     let ai_engine = state.ai_engine.lock()
@@ -539,9 +505,8 @@ fn get_ai_insights(state: State<AppState>) -> Result<Vec<system::AIInsight>, Str
     // metrics_collector only, then acquire ai_engine for the computation step.
     let metrics = {
         let mut collector = state.metrics_collector.lock()
-        .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
-    collector.get_metrics()
-};
+            .map_err(|e| format!("Failed to lock metrics collector: {}", e))?;
+        collector.get_metrics()
     };
 
     let ai_engine = state.ai_engine.lock()
@@ -599,7 +564,6 @@ fn apply_boot_optimization(
         "requires_restart": false,
     }))
 }
-use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 struct GeneralSettings {
     auto_start: bool,
@@ -1050,18 +1014,9 @@ let config = match state.maintenance_scheduler.lock() {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(1500));
                     if let Some(state) = ds_handle.try_state::<AppState>() {
-                       if let Ok(mut ds) = state.deep_sleep.lock() {
-    ds.collect_process_snapshot();
-}
-
-if let Ok(mut ds) = state.deep_sleep.try_lock() {
-    ds.tick();
-}
-}
-
-if let Ok(mut ds) = state.deep_sleep.try_lock() {
-    ds.refresh_processes();
-}
+                        if let Ok(mut ds) = state.deep_sleep.try_lock() {
+                            ds.tick();
+                        }
                     }
                 }
             });

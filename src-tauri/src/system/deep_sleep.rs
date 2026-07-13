@@ -156,44 +156,48 @@ impl DeepSleepManager {
 
         let config_path = app_config_dir.map(|d| d.join("deep_sleep_config.json"));
 
+        let mut config = DeepSleepConfig {
+            enabled: false,
+            inactivity_timeout_secs: 300,
+            whitelist: default_whitelist,
+        };
 
         // Attempt to load existing config
-       if let Some(ref path) = config_path {
-        if path.exists() {
-            match std::fs::read_to_string(path) {
-                Ok(content) => {
-                    match serde_json::from_str::<DeepSleepConfig>(&content) {
-                        Ok(loaded) => {
-                            config = loaded;
-                        }
-                        Err(err) => {
-                            eprintln!(
-                                "Failed to parse Deep Sleep configuration '{}': {}",
-                                path.display(),
-                                err
-                            );
+        if let Some(ref path) = config_path {
+            if path.exists() {
+                match std::fs::read_to_string(path) {
+                    Ok(content) => {
+                        match serde_json::from_str::<DeepSleepConfig>(&content) {
+                            Ok(loaded) => {
+                                config = loaded;
+                            }
+                            Err(err) => {
+                                eprintln!(
+                                    "Failed to parse Deep Sleep configuration '{}': {}",
+                                    path.display(),
+                                    err
+                                );
 
-                            let backup_path = path.with_extension("corrupted");
-                            let _ = std::fs::copy(path, &backup_path);
+                                let backup_path = path.with_extension("corrupted");
+                                let _ = std::fs::copy(path, &backup_path);
 
-                            eprintln!(
-                                "Corrupted configuration backed up to '{}'",
-                                backup_path.display()
-                            );
+                                eprintln!(
+                                    "Corrupted configuration backed up to '{}'",
+                                    backup_path.display()
+                                );
+                            }
                         }
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "Failed to read Deep Sleep configuration '{}': {}",
+                            path.display(),
+                            err
+                        );
                     }
                 }
             }
-            Err(err) => {
-                eprintln!(
-                    "Failed to read Deep Sleep configuration '{}': {}",
-                    path.display(),
-                    err
-                );
-            }
         }
-    }
-}
 
         Self {
             config,
@@ -213,34 +217,35 @@ impl DeepSleepManager {
             match std::fs::read_to_string(&path) {
                 Ok(content) => {
                      match serde_json::from_str::<DeepSleepConfig>(&content) {
-                Ok(loaded) => {
-                    self.config = loaded;
+                        Ok(loaded) => {
+                            self.config = loaded;
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "Failed to parse Deep Sleep configuration '{}': {}",
+                                path.display(),
+                                err
+                            );
+
+                            let backup_path = path.with_extension("corrupted");
+                            let _ = std::fs::copy(&path, &backup_path);
+
+                            eprintln!(
+                                "Corrupted configuration backed up to '{}'",
+                                backup_path.display()
+                            );
+                        }
+                    }
                 }
                 Err(err) => {
                     eprintln!(
-                        "Failed to parse Deep Sleep configuration '{}': {}",
+                        "Failed to read Deep Sleep configuration '{}': {}",
                         path.display(),
                         err
-                    );
-
-                    let backup_path = path.with_extension("corrupted");
-                    let _ = std::fs::copy(&path, &backup_path);
-
-                    eprintln!(
-                        "Corrupted configuration backed up to '{}'",
-                        backup_path.display()
                     );
                 }
             }
         }
-        Err(err) => {
-            eprintln!(
-                "Failed to read Deep Sleep configuration '{}': {}",
-                path.display(),
-                err
-            );
-        }
-    }
         
         self.config_path = Some(path);
     }

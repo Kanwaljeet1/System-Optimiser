@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from './store';
 import tauriApi from './services/tauri';
-import { formatBytes } from './utils/format';
+import { formatBytes, formatPercent } from './utils/format';
 import { AISuggestions } from './components/AISuggestions';
 import { HardwareHealth } from './components/HardwareHealth';
 import { FocusModeSettingsModal } from './components/FocusModeSettingsModal';
